@@ -383,10 +383,21 @@ ContextCache::ConvertTensorProtoToAttr(const onnx::TensorProto &tp) {
         tp.raw_data().size(), /*dataAlignment=*/8, /*dataIsMutable=*/false,
         /*deleter=*/nullptr, /*userData=*/nullptr);
   } else {
+    std::cout << "Converting non raw attr : " << tp.DebugString();
     switch (tp.data_type()) {
     case onnx::TensorProto::DataType::TensorProto_DataType_FLOAT:
       return mlirDenseElementsAttrFloatGet(tensor_type, tp.float_data_size(),
                                            tp.float_data().data());
+    case onnx::TensorProto::DataType::TensorProto_DataType_INT8: {
+      // Special case. See proto. Someone apparently got lazy++.
+      std::vector<int8_t> stupid_conversion;
+      stupid_conversion.reserve(tp.int32_data_size());
+      for (uint64_t v : tp.int32_data())
+        stupid_conversion.push_back(v);
+      return mlirDenseElementsAttrInt8Get(
+          tensor_type, stupid_conversion.size(), stupid_conversion.data());
+    }
+
     case onnx::TensorProto::DataType::TensorProto_DataType_INT32:
       return mlirDenseElementsAttrInt32Get(tensor_type, tp.int32_data_size(),
                                            tp.int32_data().data());
@@ -558,6 +569,8 @@ Status NodeImporter::DefineFunction(std::optional<std::string> name,
     MlirValue value = mlirBlockGetArgument(body_block_, i);
     nv_map_[name] = value;
   }
+
+  std::cout << "nv_map_ size : " << nv_map_.size();
 
   PopulateGraphAttrs(func_op_);
   if (out_function_op)

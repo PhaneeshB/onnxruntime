@@ -170,6 +170,7 @@ common::Status CompilerInvocation::ImportSubgraph(const onnxruntime::GraphViewer
 
   // Reset whole-graph inputs and replace with subgraph inputs.
   subgraph_info.inputs().clear();
+  // for (const auto& node_arg : graph_view.GetInputsIncludingInitializers()) {
   for (const auto& node_arg : graph_view.GetInputs()) {
     const ONNX_NAMESPACE::ValueInfoProto& input_info = node_arg->ToProto();
     // LOGS(session.logger, INFO) << "  input: " << input_info.DebugString();
@@ -177,6 +178,7 @@ common::Status CompilerInvocation::ImportSubgraph(const onnxruntime::GraphViewer
   }
 
   // And the same with outputs.
+  LOGS(session.logger, INFO) << "  before outputs ";
   subgraph_info.outputs().clear();
   for (const auto& node_arg : graph_view.GetOutputs()) {
     const ONNX_NAMESPACE::ValueInfoProto& output_info = node_arg->ToProto();
@@ -193,14 +195,27 @@ common::Status CompilerInvocation::ImportSubgraph(const onnxruntime::GraphViewer
                            model_info.error_message(), ConsumeDiagnostics());
   }
 
+
+  LOGS(session.logger, INFO) << "  before init tensors ";
+  auto all_init_tensors = graph_view.GetAllInitializedTensors();
+  for(auto& [tname, tproto] : all_init_tensors) {
+  // for(auto& [tname, tproto] : all_init_tensors) {
+    if(torch_mlir_onnx::failed(imp.ImportInitializer(*tproto))) {
+      return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_GRAPH, "Failed to import initializers '", tname, "': ",
+                             model_info.error_message(), " (node:\n", tname, "\n)", ConsumeDiagnostics());
+    }
+  }
+
   // Import each node. Note that the importer uses references internally and expects nodes to be located at fixed
   // memory locations for the life of iteration. So we materialize them into a fixed vector first. This is because
   // the onnxruntime does not keep the serialized proto form sync'd on its own.
+  LOGS(session.logger, INFO) << "  before toposort ";
   auto node_indices = graph_view.GetNodesInTopologicalOrder();
   std::vector<ONNX_NAMESPACE::NodeProto> nodes(node_indices.size());
   for (size_t i = 0; i < node_indices.size(); ++i) {
     graph_view.GetNode(node_indices[i])->ToProto(nodes[i]);
   }
+  LOGS(session.logger, INFO) << "  before failed to import: ";
   for (const auto& node : nodes) {
     if (torch_mlir_onnx::failed(imp.ImportNode(node))) {
       return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_GRAPH, "Failed to import node '", node.name(), "': ",
@@ -208,6 +223,7 @@ common::Status CompilerInvocation::ImportSubgraph(const onnxruntime::GraphViewer
     }
   }
 
+  LOGS(session.logger, INFO) << "  before finalise graph";
   // Finalize.
   if (torch_mlir_onnx::failed(imp.FinalizeGraph())) {
     return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_GRAPH, model_info.error_message(), ConsumeDiagnostics());

@@ -111,10 +111,14 @@ common::Status IREEExecutionProvider::Compile(const std::vector<FusedNodeAndGrap
   // We import each fused node by name as a top-level function, which produces a more parallelized
   // compilation.
   std::vector<std::string> entrypoint_names;
+  LOGS(*GetLogger(), INFO) << "fusedNode and Graphs SIZE : " << fused_nodes_and_graphs.size();
+
   for (auto& fused_node_graph : fused_nodes_and_graphs) {
     const GraphViewer& graph_view = fused_node_graph.filtered_graph;
+    // LOGS(*GetLogger(), INFO) << "fusedNode and Graphs Debug String : " << graph_view.GetGraph().ToGraphProto().DebugString();
     const Node& fused_node = fused_node_graph.fused_node;
     const std::string& func_name = fused_node.Name();
+    LOGS(*GetLogger(), INFO) << "fusedNode and Graphs : " << func_name;
     ORT_RETURN_IF_ERROR(inv.ImportSubgraph(graph_view, func_name));
     // The fully qualified name is the {module_name}.{func_name}. This is what we look up at
     // runtime.
@@ -122,6 +126,7 @@ common::Status IREEExecutionProvider::Compile(const std::vector<FusedNodeAndGrap
     fq_name.append(".");
     fq_name.append(func_name);
     entrypoint_names.push_back(fq_name);
+    // LOGS(*GetLogger(), INFO) << "  fused node graph: node = " << fused_node.OpType() << " (" << fused_node.Name() << ")   :  " << fq_name;
   }
 
   // Compile aggregate module to a VMFB membuffer.
@@ -129,24 +134,33 @@ common::Status IREEExecutionProvider::Compile(const std::vector<FusedNodeAndGrap
   if (auto* err = ireeCompilerOutputOpenMembuffer(&vmfb_output.output)) {
     return iree_ep_jit::ErrorToStatus(err, "Failure opening compiler output buffer: ");
   }
+  LOGS(*GetLogger(), INFO) << "before compile and out vmfb ";
+
   ORT_RETURN_IF_ERROR(inv.CompileAndOutputVMFB(vmfb_output.output));
+  LOGS(*GetLogger(), INFO) << "after compile and out vmfb ";
 
   // Map raw memory.
   void* vmfb_contents;
   uint64_t vmfb_size;
   ORT_RETURN_IF_ERROR(vmfb_output.MapMemory(&vmfb_contents, &vmfb_size));
+  LOGS(*GetLogger(), INFO) << "after memory map ";
 
   // Create a new runtime session.
   auto rt_session = std::make_shared<iree_ep_rt::Session>(rt_instance_);
   ORT_RETURN_IF_ERROR(iree_ep_rt::HandleIREEStatus(rt_session->Initialize()));
+  LOGS(*GetLogger(), INFO) << "after iree session init ";
 
   // Load the compiled module, releasing our ownership of the CompilerOutput.
   ORT_RETURN_IF_ERROR(iree_ep_rt::HandleIREEStatus(rt_session->AppendBytecodeModule(
       vmfb_contents, vmfb_size, vmfb_output.Release())));
+  LOGS(*GetLogger(), INFO) << "after append bytecode module ";
 
+  LOGS(*GetLogger(), INFO) << "before create node compute funcs ";
   for (auto& entrypoint_name : entrypoint_names) {
+  LOGS(*GetLogger(), INFO) << "inside create node compute funcs ";
     node_compute_funcs.push_back(CreateNodeComputeFunc(entrypoint_name, rt_session));
   }
+  LOGS(*GetLogger(), INFO) << "after create node compute funcs ";
 
   return common::Status::OK();
 }
