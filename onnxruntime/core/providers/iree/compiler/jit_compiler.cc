@@ -193,6 +193,14 @@ common::Status CompilerInvocation::ImportSubgraph(const onnxruntime::GraphViewer
                            model_info.error_message(), ConsumeDiagnostics());
   }
 
+  auto all_init_tensors = graph_view.GetAllInitializedTensors();
+  for(auto& [tname, tproto] : all_init_tensors) {
+    if(torch_mlir_onnx::failed(imp.ImportInitializer(*tproto))) {
+      return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_GRAPH, "Failed to import initializers '", tname, "': ",
+                             model_info.error_message(), " (node:\n", tname, "\n)", ConsumeDiagnostics());
+    }
+  }
+
   // Import each node. Note that the importer uses references internally and expects nodes to be located at fixed
   // memory locations for the life of iteration. So we materialize them into a fixed vector first. This is because
   // the onnxruntime does not keep the serialized proto form sync'd on its own.

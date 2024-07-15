@@ -210,13 +210,13 @@ public:
 
   /// Import nodes one at a time. Must complete with a call to FinalizeGraph.
   Status ImportNode(const onnx::NodeProto &node);
+  Status ImportInitializer(const onnx::TensorProto &initializer);
   Status FinalizeGraph();
 
   void DebugDumpModule();
 
 private:
   void PopulateGraphAttrs(MlirOperation container_op);
-  Status ImportInitializer(const onnx::TensorProto &initializer);
   MlirAttribute ImportGeneralAttribute(const onnx::AttributeProto &onnx_attr);
 
   // Special-form nodes.
